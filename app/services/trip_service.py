@@ -5,11 +5,24 @@ from pandas import isna
 import pandas as pd
 
 
+def safe_response(func):
+    """Decorator to wrap functions with try/except and prevent internal server errors."""
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            return {"error": str(e)}
+    return wrapper
 
+
+@safe_response
 def get_trip_summary(query):
+    
+    start = pd.to_datetime(query.start)
+    end = pd.to_datetime(query.end)
     mask = (
-        (df["tpep_pickup_datetime"] >= query.start) &
-        (df["tpep_dropoff_datetime"] <= query.end)
+        (df["tpep_pickup_datetime"] >= start) &
+        (df["tpep_dropoff_datetime"] <= end)
     )
 
     if query.pu_location_id is not None:
@@ -24,8 +37,9 @@ def get_trip_summary(query):
         "num_trips": len(filtered),
         "total_amount": float(filtered["total_amount"].sum())
     }
-    
-    
+
+
+@safe_response
 def get_weekly_trips(query):
     mask = (
         (df["tpep_pickup_datetime"] >= query.start) &
@@ -66,13 +80,12 @@ def get_weekly_trips(query):
 
     return result
 
+
+@safe_response
 def get_summary_service():
     columns = df.columns.tolist()
-    
     row_count = len(df)
-
     vendors = df["VendorID"].dropna().unique().tolist()
-
     null_counts = df.isna().sum().to_dict()
 
     result = {
@@ -82,7 +95,6 @@ def get_summary_service():
         "null_counts": null_counts
     }
 
-    # Recursive replacement of any remaining NaN (safety)
     def replace_nan(obj):
         if isinstance(obj, list):
             return [replace_nan(i) for i in obj]
@@ -94,11 +106,15 @@ def get_summary_service():
             return obj
 
     return replace_nan(result)
-   
+
+
+@safe_response
 def get_sample_data(n: int):
     sample_data = df.sample(n=n).where(pd.notna(df), None).to_dict(orient="records")
     return sample_data
 
+
+@safe_response
 def get_filtered_passengers(passenger_count: int):
     filtered_passengers = (
         df[df["passenger_count"] == passenger_count]
@@ -107,6 +123,8 @@ def get_filtered_passengers(passenger_count: int):
     )
     return filtered_passengers
 
+
+@safe_response
 def get_trip_duration_preview(limit: int = 10):
     temp_df = df.copy()
     temp_df["trip_duration_minutes"] = (
@@ -114,7 +132,6 @@ def get_trip_duration_preview(limit: int = 10):
         .dt.total_seconds()
         / 60
     )
-
     preview = (
         temp_df[["tpep_pickup_datetime", "tpep_dropoff_datetime", "trip_duration_minutes"]]
         .head(limit)
@@ -124,53 +141,58 @@ def get_trip_duration_preview(limit: int = 10):
     return preview
 
 
+@safe_response
 def get_daily_trips():
     daily_counts = (
         df.groupby(df["tpep_pickup_datetime"].dt.date)
         .size()
         .reset_index(name="trip_count")
     )
+    return daily_counts.to_dict(orient="records")
 
-    # Convert to JSON-like dict
-    result = daily_counts.to_dict(orient="records")
-    return result
 
+@safe_response
 def get_top_pickup_locations(top: int):
     top_locations = (
         df["PULocationID"]
-        .value_counts()              
-        .head(top)                   
-        .reset_index()               
+        .value_counts()
+        .head(top)
+        .reset_index()
     )
-
-    # Convert to JSON-like dict
     return top_locations.to_dict(orient="records")
 
 
+@safe_response
 def get_revenue_by_vendor():
     revenue = (
         df.groupby("VendorID")["total_amount"]
         .sum()
         .reset_index()
-        .to_dict(orient="records")
     )
     return revenue.to_dict(orient="records")
 
 
+@safe_response
 def get_avg_fare_per_mile():
-    safe_df = df[df["trip_distance"] > 0]  # avoid division by zero
+    safe_df = df[df["trip_distance"] > 0]
     avg = (safe_df["fare_amount"] / safe_df["trip_distance"]).mean()
     return {"avg_fare_per_mile": round(avg, 2)}
 
+
+@safe_response
 def get_peak_hours():
     df['pickup_hour'] = df['tpep_pickup_datetime'].dt.hour
     counts = df.groupby('pickup_hour').size().to_dict()
     return counts
 
+
+@safe_response
 def get_payment_split():
     counts = df['payment_type'].value_counts(normalize=True) * 100
-    return counts.round(2).to_dict()  # percentage
+    return counts.round(2).to_dict()
 
+
+@safe_response
 def get_airport_trips(limit: int = 100):
     airport = (
         df[df["Airport_fee"] > 0]
@@ -181,11 +203,13 @@ def get_airport_trips(limit: int = 100):
     return airport
 
 
+@safe_response
 def get_passenger_distribution():
     counts = df['passenger_count'].value_counts().sort_index()
     return counts.to_dict()
 
 
+@safe_response
 def get_high_tips(min_tip: float = 20, limit: int = 100):
     high_tips = (
         df[df["tip_amount"] > min_tip]
@@ -196,6 +220,7 @@ def get_high_tips(min_tip: float = 20, limit: int = 100):
     return high_tips
 
 
+@safe_response
 def get_longest_trips(top: int = 5):
     longest = (
         df.sort_values(by="trip_distance", ascending=False)
@@ -206,16 +231,21 @@ def get_longest_trips(top: int = 5):
     return longest
 
 
+@safe_response
 def get_congestion_impact():
     df['pickup_date'] = df['tpep_pickup_datetime'].dt.date
     impact = df.groupby('pickup_date')['congestion_surcharge'].sum().to_dict()
     return impact
 
+
+@safe_response
 def get_avg_duration_vendor():
     df['trip_duration_minutes'] = (df['tpep_dropoff_datetime'] - df['tpep_pickup_datetime']).dt.total_seconds() / 60
     avg_duration = df.groupby('VendorID')['trip_duration_minutes'].mean().round(2).to_dict()
     return avg_duration
 
+
+@safe_response
 def get_monthly_revenue():
     monthly = (
         df.groupby(df["tpep_pickup_datetime"].dt.to_period("M"))["total_amount"]
