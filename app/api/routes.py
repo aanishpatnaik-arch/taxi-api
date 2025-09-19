@@ -2,8 +2,21 @@ from fastapi import APIRouter,Query
 from app.models.schemas import TripQuery
 from typing import Optional
 from app.services.trip_service import *
+from fastapi.responses import JSONResponse
+import datetime
 
 router = APIRouter()
+
+@router.get("/hbtChk", tags=["Health"])
+async def health_check():
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "UP",
+            "service": "taxi-api",
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+        }
+    )
 
 @router.post("/trips_summary")
 def trips_summary(query: TripQuery):

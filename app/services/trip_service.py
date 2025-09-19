@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from app.data.loader import df
 from datetime import timedelta
 from typing import Optional
@@ -6,12 +7,16 @@ import pandas as pd
 
 
 def safe_response(func):
-    """Decorator to wrap functions with try/except and prevent internal server errors."""
+    """Decorator to wrap functions with try/except and raise HTTP errors."""
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except Exception as e:
-            return {"error": str(e)}
+        except KeyError as e:   # missing column
+            raise HTTPException(status_code=400, detail=f"Missing column: {str(e)}")
+        except ValueError as e: # bad input
+            raise HTTPException(status_code=422, detail=f"Invalid value: {str(e)}")
+        except Exception as e:  # fallback
+            raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
     return wrapper
 
 
@@ -41,9 +46,12 @@ def get_trip_summary(query):
 
 @safe_response
 def get_weekly_trips(query):
+    start = pd.to_datetime(query.start)
+    end = pd.to_datetime(query.end)
+    
     mask = (
-        (df["tpep_pickup_datetime"] >= query.start) &
-        (df["tpep_pickup_datetime"] <= query.end)
+        (df["tpep_pickup_datetime"] >= start) &
+        (df["tpep_dropoff_datetime"] <= end)
     )
 
     if query.pu_location_id is not None:
